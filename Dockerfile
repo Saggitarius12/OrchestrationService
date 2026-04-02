@@ -15,6 +15,9 @@ RUN pip install --upgrade pip && pip install ".[dev]"
 FROM deps AS runtime
 COPY . .
 
+# Expose the API port
+EXPOSE 8000
+
 # Run migrations then start the server
 CMD ["sh", "-c", "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8003 --workers 2"]
 

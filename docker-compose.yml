@@ -20,6 +20,24 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  orchestration-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A workers.celery_app worker --loglevel=info -c 10
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/orchestration
+      REDIS_URL: redis://redis:6379/0
+      AGENT_RUNTIME_BASE_URL: http://agent-runtime-service:8001
+      ENVIRONMENT: development
+      DEBUG: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
   postgres:
     image: postgres:16-alpine
     environment:
