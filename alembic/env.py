@@ -11,12 +11,15 @@ from sqlalchemy import engine_from_config
 import os
 from dotenv import load_dotenv
 import sys
+from alembic import context
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import models so Alembic can detect metadata
 from app.models.orchestration.base import OrchestrationBase
 import app.models.orchestration.models  # noqa: F401
+
+config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
