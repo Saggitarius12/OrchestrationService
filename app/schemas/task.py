@@ -60,4 +60,12 @@ class TaskResponse(TaskBase):
 
 class TaskListResponse(BaseModel):
     items: List[TaskResponse]
-    total: int
+    total: int    
+   
+
+class AgentTaskResult(BaseModel):
+    """Payload sent by the Agent Runtime Service as a callback."""
+    status: str = Field(..., pattern="^(COMPLETED|FAILED)$")
+    success: bool
+    output_data: Optional[Dict[str, Any]] = None
+    error_message: Optional[str] = None

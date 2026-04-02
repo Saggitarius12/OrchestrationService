@@ -1,5 +1,6 @@
 """
-Task REST endpoints.
+Task REST endpoints - Orchestration Service.
+Handles Task CRUD and Agent Callbacks.
 """
 from typing import Annotated, Optional
 from uuid import UUID
@@ -14,7 +15,7 @@ from app.core.exceptions import (
     NotFoundError,
     WorkflowAlreadyTerminalError,
 )
-from app.events.publisher import publish_event
+from app.events.publisher import publish_event, TASK_FINISHED
 from app.models.orchestration.models import ExecutionStatus
 from app.schemas.task import (
     TaskCreate,
@@ -68,19 +69,6 @@ async def list_tasks(
     )
 
 
-@router.get("/ready", response_model=TaskListResponse)
-async def get_ready_tasks(workflow_id: UUID, session: DbSession) -> TaskListResponse:
-    """Return tasks whose dependency tasks are all COMPLETED."""
-    try:
-        tasks = await _svc(session).get_ready_tasks(workflow_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-    return TaskListResponse(
-        items=[TaskResponse.model_validate(t) for t in tasks],
-        total=len(tasks),
-    )
-
-
 @router.get("/{task_id}", response_model=TaskResponse)
 async def get_task(workflow_id: UUID, task_id: UUID, session: DbSession) -> TaskResponse:
     try:
@@ -89,19 +77,6 @@ async def get_task(workflow_id: UUID, task_id: UUID, session: DbSession) -> Task
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     if task.workflow_id != workflow_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found in workflow.")
-    return TaskResponse.model_validate(task)
-
-
-@router.patch("/{task_id}", response_model=TaskResponse)
-async def update_task(
-    workflow_id: UUID, task_id: UUID, body: TaskUpdate, session: DbSession
-) -> TaskResponse:
-    try:
-        task = await _svc(session).update(task_id, body)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-    except WorkflowAlreadyTerminalError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     return TaskResponse.model_validate(task)
 
 
@@ -115,23 +90,7 @@ async def delete_task(workflow_id: UUID, task_id: UUID, session: DbSession) -> N
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
 
 
-# ── Status / result ───────────────────────────────────────────────────────────
-
-@router.patch("/{task_id}/status", response_model=TaskResponse)
-async def update_task_status(
-    workflow_id: UUID,
-    task_id: UUID,
-    body: TaskStatusUpdate,
-    session: DbSession,
-) -> TaskResponse:
-    try:
-        task = await _svc(session).update_status(task_id, body)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-    except InvalidTransitionError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
-    return TaskResponse.model_validate(task)
-
+# ── Agent Callback & Status ───────────────────────────────────────────────────
 
 class AgentTaskResult(TaskStatusUpdate):
     """Payload sent by the Agent Runtime Service as a callback."""
@@ -143,26 +102,53 @@ async def agent_task_result_callback(
     workflow_id: UUID,
     task_id: UUID,
     body: AgentTaskResult,
+    session: DbSession,
 ) -> dict:
     """
     Webhook called by the Agent Runtime Service when a task finishes.
-    Emits a TASK_FINISHED event to Redis and returns 202 immediately.
-    The Dispatcher worker will pick this up, update DB state, and advance the DAG.
+    1. Updates Task status to COMPLETED/FAILED.
+    2. Triggers the Orchestration Worker via Redis to evaluate next DAG steps.
     """
-    # Simply push the event to Redis. Do NOT use FastAPI BackgroundTasks.
-    # The dedicated dispatcher process will handle DB locking and state updates.
-    await publish_event(
-        "TASK_FINISHED", # Make sure this constant exists in events/publisher.py
-        workflow_id=workflow_id,
-        payload={
-            "task_id": str(task_id),
-            "success": body.success,
-            "output_data": body.output_data,
-            "error_message": body.error_message,
-        }
-    )
-    
+    try:
+        # 1. Update status in DB via Service
+        # This uses the logic we wrote in TaskService to set completed_at and payloads
+        await _svc(session).update_status(task_id, body)
+        
+        # 2. Publish event to Redis for the Worker
+        # The 'TASK_FINISHED' event triggers the Celery task 'handle_task_result_task'
+        await publish_event(
+            TASK_FINISHED,
+            workflow_id=workflow_id,
+            payload={
+                "task_id": str(task_id),
+                "success": body.success,
+                "output_data": body.output_data,
+                "error_message": body.error_message,
+            }
+        )
+    except NotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except InvalidTransitionError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+
     return {"accepted": True, "task_id": str(task_id)}
+
+
+@router.patch("/{task_id}/status", response_model=TaskResponse)
+async def manual_update_task_status(
+    workflow_id: UUID,
+    task_id: UUID,
+    body: TaskStatusUpdate,
+    session: DbSession,
+) -> TaskResponse:
+    """Manual status override (Admin only)."""
+    try:
+        task = await _svc(session).update_status(task_id, body)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except InvalidTransitionError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    return TaskResponse.model_validate(task)
 
 
 # ── DAG validation ────────────────────────────────────────────────────────────

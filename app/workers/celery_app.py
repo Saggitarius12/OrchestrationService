@@ -11,7 +11,7 @@ celery_app = Celery(
     "orchestration_worker",
     broker=getattr(settings, "REDIS_URL", "redis://localhost:6379/0"),
     backend=getattr(settings, "REDIS_URL", "redis://localhost:6379/0"),
-    include=["workers.tasks"]  # Instructs Celery to look for tasks here
+    include=["app.workers.tasks"]  # Instructs Celery to look for tasks here
 )
 
 # Celery Configuration
