@@ -15,11 +15,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import models so Alembic can detect metadata
-from models.orchestration.base import OrchestrationBase
-import models.orchestration.models  # noqa: F401
-
-load_dotenv()
-config = context.config
+from app.models.orchestration.base import OrchestrationBase
+import app.models.orchestration.models  # noqa: F401
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

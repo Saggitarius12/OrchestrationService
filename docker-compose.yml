@@ -24,7 +24,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: celery -A workers.celery_app worker --loglevel=info -c 10
+    command: celery -A app.workers.celery_app worker --loglevel=info -c 10
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/orchestration
       REDIS_URL: redis://redis:6379/0

@@ -67,13 +67,4 @@ testpaths = ["tests"]
 
 # --- ADD THIS SECTION ---
 [tool.hatch.build.targets.wheel]
-packages = [
-    "api",
-    "core",
-    "events",
-    "models",
-    "repositories",
-    "schemas",
-    "services",
-    "workers"
-]
+packages = ["app"]
