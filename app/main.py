@@ -32,9 +32,7 @@ from app.core.exceptions import (
     WorkflowNotPausedError,
 )
 from app.core.logging import configure_logging, get_logger
-from app.events.publisher import close_redis, get_redis
-from app.services.orchestration_engine import close_http_client, get_http_client
-from app.workers.task_executor import task_executor
+from app.events.publisher import close_redis, get_redis_client
 
 configure_logging()
 log = get_logger(__name__)
@@ -44,22 +42,16 @@ log = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    log.info("service_starting", service=settings.SERVICE_NAME, env=settings.ENVIRONMENT)
+    log.info("service_starting")
 
     # Warm up connections
     get_engine()
-    get_redis()
-    get_http_client()
-
-    # Start background task executor
-    await task_executor.start()
+    await get_redis_client()
 
     log.info("service_ready")
     yield
 
     # Graceful shutdown
-    await task_executor.stop()
-    await close_http_client()
     await close_redis()
     await close_db()
     log.info("service_stopped")
@@ -177,7 +169,7 @@ def create_app() -> FastAPI:
 
         # Redis check
         try:
-            redis = get_redis()
+            redis = await get_redis_client()
             await redis.ping()
             checks["redis"] = "ok"
         except Exception as exc:

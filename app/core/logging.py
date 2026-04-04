@@ -17,6 +17,10 @@ def configure_logging() -> None:
     """Implement a production-grade logger using dictConfig."""
     log_level = logging.DEBUG if settings.DEBUG else logging.INFO
     os.makedirs("logs", exist_ok=True)
+    
+    for logger_name in ["uvicorn", "uvicorn.error", "uvicorn.access"]:
+        uvicorn_logger = logging.getLogger(logger_name)
+        uvicorn_logger.handlers.clear()
 
     logging_config = {
         "version": 1,

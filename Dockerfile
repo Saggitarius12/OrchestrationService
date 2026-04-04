@@ -16,9 +16,9 @@ FROM deps AS runtime
 COPY . .
 
 # Expose the API port
-EXPOSE 8000
+EXPOSE 8002
 
 # Run migrations then start the server
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"]
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8002 --workers 2"]
 
-EXPOSE 8000
+EXPOSE 8002

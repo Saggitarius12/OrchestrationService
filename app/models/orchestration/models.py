@@ -55,6 +55,7 @@ class WorkflowModel(OrchestrationBase):
     messages: Mapped[List["MessageModel"]] = relationship(
         back_populates="workflow", cascade="all, delete-orphan"
     )
+    global_context: Mapped[dict] = mapped_column(JSON, default=dict)
 
     def __repr__(self) -> str:
         return f"<WorkflowModel id={self.id} status={self.status}>"

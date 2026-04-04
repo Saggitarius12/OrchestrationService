@@ -17,6 +17,29 @@ from app.workers.celery_app import celery_app
 
 log = logging.getLogger(__name__)
 
+# ── Redis singleton ───────────────────────────────────────────────────────────
+
+_redis_client: redis.Redis | None = None
+
+
+async def get_redis_client() -> redis.Redis:
+    """Return the shared Redis client, creating it on first call."""
+    global _redis_client
+    if _redis_client is None:
+        redis_url = getattr(settings, "REDIS_URL", "redis://localhost:6379/0")
+        _redis_client = redis.from_url(redis_url, decode_responses=True)
+    return _redis_client
+
+
+async def close_redis() -> None:
+    """Close and discard the shared Redis client (called on shutdown)."""
+    global _redis_client
+    if _redis_client is not None:
+        await _redis_client.aclose()
+        log.info("redis_connection_closed")
+        _redis_client = None
+
+
 # ── Event Constants ──
 WORKFLOW_CREATED = "WORKFLOW_CREATED"
 WORKFLOW_STARTED = "WORKFLOW_STARTED"
@@ -40,11 +63,6 @@ class DefaultEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
-async def get_redis_client() -> redis.Redis:
-    redis_url = getattr(settings, "REDIS_URL", "redis://localhost:6379/0")
-    return redis.from_url(redis_url, decode_responses=True)
-
-
 async def publish_event(event_type: str, workflow_id: UUID, payload: Dict[str, Any] = None) -> None:
     """
     Routes events. Engine triggers go to Celery. UI/Agent broadcasts go to Redis Pub/Sub.
@@ -58,13 +76,13 @@ async def publish_event(event_type: str, workflow_id: UUID, payload: Dict[str, A
     # We use send_task(string_name) to break the circular dependency.
     if event_type in [WORKFLOW_STARTED, WORKFLOW_RESUMED]:
         celery_app.send_task(
-            "workers.tasks.advance_workflow_task", 
+            "advance_workflow_task",
             args=[workflow_id_str]
         )
-        
+
     elif event_type == TASK_FINISHED:
         celery_app.send_task(
-            "workers.tasks.handle_task_result_task",
+            "handle_task_result_task",
             kwargs={
                 "workflow_id_str": workflow_id_str,
                 "task_id_str": str(payload["task_id"]),

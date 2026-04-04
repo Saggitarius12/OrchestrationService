@@ -19,6 +19,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.models.orchestration.base import OrchestrationBase
 import app.models.orchestration.models  # noqa: F401
 
+load_dotenv()
+
 config = context.config
 
 if config.config_file_name is not None:
