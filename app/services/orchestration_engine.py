@@ -11,7 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from app.events.publisher import AGENT_TASK_DISPATCH, publish_event
 from app.models.orchestration.models import ExecutionStatus, TaskModel, WorkflowModel
-
+import simpleeval
 log = logging.getLogger(__name__)
 
 class OrchestrationEngine:
