@@ -15,8 +15,10 @@ class ExecutionStatus(str, enum.Enum):
     PENDING = "PENDING"
     QUEUED = "QUEUED"      
     RUNNING = "RUNNING"
+    WAITING= "WAITING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
+    SKIPPED = "SKIPPED"
     PAUSED = "PAUSED"
 
 
@@ -91,6 +93,7 @@ class TaskModel(OrchestrationBase):
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     workflow: Mapped["WorkflowModel"] = relationship(back_populates="tasks")
+    task_type:Mapped[str] = mapped_column(String,default="Agent",server_default="Agent")
 
     
     upstream_tasks: Mapped[List["TaskModel"]] = relationship(
