@@ -25,6 +25,7 @@ from app.schemas.task import (
     TaskUpdate,
 )
 from app.services.task_service import TaskService
+from pydantic import BaseModel
 
 router = APIRouter(
     prefix="/workflows/{workflow_id}/tasks",
@@ -39,7 +40,11 @@ def _svc(session: DbSession) -> TaskService:
 
 
 # ── CRUD ──────────────────────────────────────────────────────────────────────
+class HITLResolution(BaseModel):
+    approved: bool
+    feedback: Optional[str]=None
 
+    
 @router.post("", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
 async def create_task(
     workflow_id: UUID, body: TaskCreate, session: DbSession
@@ -163,3 +168,31 @@ async def validate_dag(workflow_id: UUID, session: DbSession) -> dict:
     except DependencyCycleError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
     return {"valid": True}
+
+
+@router.post("/{task_id}/resolve-hitl", status_code=status.HTTP_202_ACCEPTED)
+async def resolve_hitl_task(
+    workflow_id: UUID,
+    task_id: UUID,
+    body: HITLResolution,
+    session: DbSession
+):
+    """
+    Called by the Frontend UI when a human approves/rejects a waiting task.
+    """
+    task = await _svc(session).get(task_id)
+    
+    if task.status != ExecutionStatus.WAITING:
+        raise HTTPException(status_code=400, detail="Task is not waiting for human input.")
+
+    # Resume the workflow by publishing the result
+    await publish_event(
+        TASK_FINISHED,
+        workflow_id=workflow_id,
+        payload={
+            "task_id": str(task_id),
+            "success": body.approved, # If false, the DAG branch fails/stops
+            "output_data": {"human_feedback": body.feedback, "approved": body.approved},
+        }
+    )
+    return {"accepted": True, "message": "HITL resolved. Workflow resuming."}
