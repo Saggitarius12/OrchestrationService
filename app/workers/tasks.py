@@ -8,9 +8,40 @@ from uuid import UUID
 from app.core.database import async_sessionmaker
 from app.services.orchestration_engine import OrchestrationEngine
 from app.workers.celery_app import celery_app
+from app.models.orchestration.models import TaskModel, ExecutionStatus
+from datetime import timedelta, timezone, datetime
+from app.events.publisher import publish_event, TASK_FINISHED
+from sqlalchemy import select
 
 log = logging.getLogger(__name__)
 
+
+async def async_reap_zombies():
+    """Finds tasks stuck in RUNNING for more than 20 minutes."""
+    timeout_threshold = datetime.now(timezone.utc)- timedelta(minutes=20)
+    
+    async with async_sessionmaker() as session:
+        
+        stmt = select(TaskModel).where(
+            TaskModel.status == ExecutionStatus.RUNNING,
+            TaskModel.updated_at < timeout_threshold
+        )
+        result = await session.execute(stmt)
+        zombies = result.scalars().all()
+
+        for task in zombies:
+            log.warning(f"Reaping zombie task {task.id} in workflow {task.workflow_id}")
+            
+            await publish_event(
+                TASK_FINISHED,
+                workflow_id=task.workflow_id,
+                payload={
+                    "task_id": str(task.id),
+                    "success": False,
+                    "error_message": "System Error: Task execution timed out (Zombie Worker)."
+                }
+            )
+        
 
 async def _async_advance_workflow(workflow_id: UUID) -> None:
     """Async inner function to execute the OrchestrationEngine."""
@@ -77,3 +108,12 @@ def handle_task_result_task(
     except Exception as exc:
         log.error(f"Error handling task result for {task_id}: {exc}", exc_info=True)
         raise self.retry(exc=exc, countdown=2 ** self.request.retries)
+    
+@celery_app.task(name="reap_zombies_task")
+def reap_zombie_task():
+    """Scheduled task to clean up zombie tasks."""
+    log.info("Celery executing zombie reaper")
+    try:
+        asyncio.run(async_reap_zombies())
+    except Exception as exc:
+        log.error(f"Error reaping zombies: {exc}", exc_info=True)

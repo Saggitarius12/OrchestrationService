@@ -5,6 +5,8 @@ from celery import Celery
 
 from app.core.config import settings
 
+from celery.schedules import crontab
+
 # Initialize Celery
 # We use Redis as both the broker (message queue) and backend (result store)
 celery_app = Celery(
@@ -26,3 +28,10 @@ celery_app.conf.update(
     # Ensure one worker doesn't hoard all tasks if others are free
     worker_prefetch_multiplier=1,
 )
+
+celery_app.conf.beat_schedule = {
+    "reap-zombies-every-5-minutes": {
+        "task": "reap_zombies_task",
+        "schedule": crontab(minute="*/5"), # Runs every 5 minutes
+    }
+}
