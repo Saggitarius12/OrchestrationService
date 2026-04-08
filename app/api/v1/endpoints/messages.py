@@ -61,6 +61,7 @@ async def create_message(
     "/workflows/{workflow_id}/messages",
     response_model=MessageListResponse,
 )
+@router.get("/workflows/{workflow_id}/messages", response_model=MessageListResponse)
 async def list_workflow_messages(
     workflow_id: UUID,
     session: DbSession,
@@ -68,16 +69,16 @@ async def list_workflow_messages(
     page_size: int = Query(50, ge=1, le=200),
 ) -> MessageListResponse:
     offset = (page - 1) * page_size
-    try:
-        messages = await _svc(session).list_for_workflow(
-            workflow_id, offset=offset, limit=page_size
-        )
-    except NotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-        
+    
+    
+    messages, total_count = await _svc(session).list_for_workflow(
+        workflow_id, offset=offset, limit=page_size
+    )
+    
     return MessageListResponse(
         items=[MessageResponse.model_validate(m) for m in messages],
-        total=len(messages),
+        total=total_count, 
+        page_size=page_size
     )
 
 
