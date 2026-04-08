@@ -138,14 +138,14 @@ class OrchestrationEngine:
         if error_message:
             task.error_message = error_message
 
-        # 4. Update Global Context (n8n logic)
+        # 4. Update Global Context 
         # Merges this task's result into the shared workflow memory
         if success and output_data:
             # We create a shallow copy to ensure SQLAlchemy detects the change to the JSONB column
             current_context = dict(workflow.global_context) if workflow.global_context else {}
             
             # Use task.name as the key so other nodes can reference it 
-            # e.g. {{ $node["TaskName"].output }}
+            
             current_context[task.name] = output_data
             
             workflow.global_context = current_context
