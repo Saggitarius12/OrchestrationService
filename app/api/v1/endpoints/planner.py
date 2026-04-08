@@ -11,6 +11,7 @@ from app.models.orchestration.models import ExecutionStatus
 from app.schemas.task import TaskResponse  # Ensure your TaskResponse schema can serialize the TaskModel
 from app.services.planner_service import PlannerService
 from app.services.workflow_service import WorkflowService
+from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
@@ -60,10 +61,30 @@ async def generate_workflow_plan(
     # 4. Generate the plan using the AI Planner Service
     planner = PlannerService(session)
     try:
-        tasks = await planner.generate_plan_for_workflow(wf)
+        requires_workflow,tasks = await planner.generate_plan_for_workflow(wf)
         
         # Return the generated tasks using your Pydantic response schema
-        return [TaskResponse.model_validate(t) for t in tasks]
+        if not requires_workflow:
+             return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "type": "direct_response",
+                "message": tasks,
+                "workflow_status": "COMPLETED"
+            }
+        )
+        else:
+             return JSONResponse(
+            status_code=status.HTTP_201_CREATED,
+            content={
+            "type": "dag_generated",
+            "tasks":[TaskResponse.model_validate(t).model_dump() for t in tasks],
+            "workflow_status": "PENDING"
+            }
+             )
+        
+            
+        
 
     except ValueError as e:
         # LLM generated an invalid plan (e.g., Cyclic dependency)

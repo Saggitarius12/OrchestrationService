@@ -3,6 +3,7 @@ import uuid
 from graphlib import TopologicalSorter, CycleError
 from typing import Dict, List
 
+from app.services.message_service import MessageService
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings  # Assuming you have settings for API keys
 from app.core.exceptions import DependencyCycleError # Assuming you have this, or raise ValueError
 from app.models.orchestration.models import WorkflowModel, TaskModel, ExecutionStatus
+from app.models.orchestration.models import MessageModel
 
 from app.schemas.planner import WorkflowPlan, TaskDefinition 
 
@@ -21,6 +23,7 @@ logger = logging.getLogger(__name__)
 class PlannerService:
     def __init__(self, session: AsyncSession):
         self.session = session
+        self.msg_svc = MessageService(session)
         
         self.llm_client = AsyncOpenAI(api_key=getattr(settings, "OPENAI_API_KEY", None))
         self.model_name = "gpt-4o"
@@ -35,13 +38,29 @@ class PlannerService:
         
         plan = await self._fetch_plan_from_llm(workflow.goal)
         
+        if not plan.requires_workflow:
+            logger.info(f"Bypassing DAG for workflow {workflow.id} (Chit-chat).")
+            
+            
+            await self.msg_svc.create(
+                workflow_id=workflow.id,
+                role="assistant",
+                content=plan.direct_response or "Hello! How can I help you?",
+                sync_to_memory=True 
+            )
+            
+            
+            workflow.status = ExecutionStatus.COMPLETED
+            await self.session.commit()
+            return False, plan.direct_response
+        
         
         self._validate_dag(plan)
         
        
         tasks = await self._persist_plan_to_db(workflow.id, plan)
         
-        return tasks
+        return True,tasks
 
     async def _fetch_plan_from_llm(self, goal: str) -> WorkflowPlan:
         """Calls OpenAI using Structured Outputs to guarantee the response matches our Pydantic model."""
