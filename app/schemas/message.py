@@ -12,8 +12,13 @@ class MessageBase(BaseModel):
     content: str = Field(..., description="The actual message or log content")
 
 
-class MessageCreate(MessageBase):
-    pass
+class MessageCreate(BaseModel):
+    role: str
+    content: str
+    task_id: Optional[UUID] = None
+    msg_type: str = "text"
+    metadata_json: Optional[dict] = {}
+    idempotency_key: Optional[str] = None # Highly recommended for Agents to generate this
 
 
 class MessageResponse(MessageBase):
