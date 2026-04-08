@@ -1,5 +1,6 @@
 from typing import List
 from pydantic import BaseModel, Field
+from typing import  Optional
 
 class TaskDefinition(BaseModel):
     id: str = Field(..., description="A unique string identifier for this task (e.g., 'task_1').")
@@ -12,7 +13,15 @@ class TaskDefinition(BaseModel):
     )
 
 class WorkflowPlan(BaseModel):
-    tasks: List[TaskDefinition] = Field(
+     requires_workflow: bool = Field(
+        ..., 
+        description="Set to False if the user's input is a greeting, chit-chat, or a simple question that you can answer directly. Set to True if it requires fetching data, using tools, or multi-step reasoning."
+    )
+     direct_response: Optional[str] = Field(
+        None, 
+        description="If requires_workflow is False, provide the direct conversational response here (e.g., 'Hello! How can I help you today?')."
+    )
+     tasks: List[TaskDefinition] = Field(
         ..., 
         description="A list of tasks that form a Directed Acyclic Graph (DAG) to achieve the user's goal."
     )
