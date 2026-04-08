@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any, List, Optional
 
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, JSON, String, Table, Uuid
+from sqlalchemy import Column, DateTime, Enum, ForeignKey, JSON, String, Table, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -113,22 +113,26 @@ class MessageModel(OrchestrationBase):
     __tablename__ = "messages"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    workflow_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("workflows.id", ondelete="CASCADE"), 
-        index=True
-    )
-    task_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        ForeignKey("tasks.id", ondelete="CASCADE")
-    )
-    agent_id: Mapped[Optional[uuid.UUID]] = mapped_column(Uuid, index=True)
-
-    role: Mapped[str] = mapped_column(String)
+    workflow_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workflows.id", ondelete="CASCADE"), index=True)
+    task_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), nullable=True)
+    
+    role: Mapped[str] = mapped_column(String) # user, assistant, system
+    
+    
+    # 'thought', 'tool_call', 'tool_result', 'final_answer'
+    msg_type: Mapped[str] = mapped_column(String, default="text", server_default="text")
     content: Mapped[str] = mapped_column(String)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    metadata_json: Mapped[Optional[dict]] = mapped_column(JSON, default=dict)
+    
+    # Prevents duplicate messages if an agent retries its HTTP call
+    idempotency_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    workflow: Mapped["WorkflowModel"] = relationship(back_populates="messages")
+    # Unique constraint: No two messages in the same workflow can have the same idempotency key
+    __table_args__ = (
+        UniqueConstraint("workflow_id", "idempotency_key", name="uq_messages_workflow_idempotency"),
+    )
 
     def __repr__(self) -> str:
         return f"<MessageModel id={self.id} role={self.role!r}>"
