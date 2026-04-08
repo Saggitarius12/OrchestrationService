@@ -12,6 +12,8 @@ from app.models.orchestration.models import TaskModel, ExecutionStatus
 from datetime import timedelta, timezone, datetime
 from app.events.publisher import publish_event, TASK_FINISHED
 from sqlalchemy import select
+import httpx
+from app.core.config import settings
 
 log = logging.getLogger(__name__)
 
@@ -117,3 +119,23 @@ def reap_zombie_task():
         asyncio.run(async_reap_zombies())
     except Exception as exc:
         log.error(f"Error reaping zombies: {exc}", exc_info=True)
+        
+        
+@celery_app.task(name="sync_message_to_memory_service")
+def sync_message_to_memory_service(workflow_id: str, role: str, content: str, metadata: dict):
+    """
+    Background worker that pushes a message from the OS to the Memory Service.
+    This ensures the 'Brain' stays updated with what the 'UI' is showing.
+    """
+    url = f"{settings.MEMORY_SERVICE_URL}/api/v1/entries"
+    
+    payload = {
+        "workflow_id": workflow_id,
+        "role": role,
+        "content": content,
+        "metadata": metadata
+    }
+    
+    with httpx.Client() as client:
+        response = client.post(url, json=payload)
+        response.raise_for_status()
