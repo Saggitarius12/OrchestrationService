@@ -14,7 +14,7 @@ from app.core.exceptions import (
     NotFoundError,
     WorkflowAlreadyTerminalError,
 )
-from app.models.orchestration.models import ExecutionStatus
+from app.models.orchestration.models import ExecutionStatus, WorkflowModel
 from app.schemas.workflow import (
     WorkflowCreate,
     WorkflowListResponse,
@@ -32,12 +32,37 @@ def _svc(session: DbSession) -> WorkflowService:
     return WorkflowService(session)
 
 
+def _to_response(wf: WorkflowModel, include_tasks: bool = False) -> WorkflowResponse:
+    """Safely convert ORM model to Pydantic response, avoiding lazy loading."""
+    from sqlalchemy import inspect
+    
+    tasks = None
+    if include_tasks:
+        try:
+            state = inspect(wf)
+            if "tasks" not in state.unloaded:
+                tasks = list(wf.tasks) if wf.tasks else None
+        except Exception:
+            tasks = None
+    
+    return WorkflowResponse(
+        id=wf.id,
+        user_id=wf.user_id,
+        goal=wf.goal,
+        status=wf.status,
+        result_data=wf.result_data,
+        created_at=wf.created_at,
+        updated_at=wf.updated_at,
+        tasks=tasks,
+    )
+
+
 # ── CRUD ──────────────────────────────────────────────────────────────────────
 
 @router.post("", response_model=WorkflowResponse, status_code=status.HTTP_201_CREATED)
 async def create_workflow(body: WorkflowCreate, session: DbSession) -> WorkflowResponse:
     wf = await _svc(session).create(body)
-    return WorkflowResponse.model_validate(wf)
+    return _to_response(wf)
 
 
 @router.get("", response_model=WorkflowListResponse)
@@ -56,7 +81,7 @@ async def list_workflows(
         limit=page_size,
     )
     return WorkflowListResponse(
-        items=[WorkflowResponse.model_validate(w) for w in items],
+        items=[_to_response(w) for w in items],
         total=total,
         page=page,
         page_size=page_size,
@@ -70,7 +95,7 @@ async def get_workflow(workflow_id: UUID, session: DbSession) -> WorkflowRespons
         wf = await _svc(session).get_with_tasks(workflow_id)
     except NotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-    return WorkflowResponse.model_validate(wf)
+    return _to_response(wf, include_tasks=True)
 
 
 @router.patch("/{workflow_id}", response_model=WorkflowResponse)
@@ -83,7 +108,7 @@ async def update_workflow(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     except WorkflowAlreadyTerminalError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
-    return WorkflowResponse.model_validate(wf)
+    return _to_response(wf)
 
 
 @router.delete("/{workflow_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -110,7 +135,7 @@ async def start_workflow(workflow_id: UUID, session: DbSession) -> WorkflowRespo
     except ConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
 
-    return WorkflowResponse.model_validate(wf)
+    return _to_response(wf)
 
 
 @router.post("/{workflow_id}/pause", response_model=WorkflowResponse)
@@ -121,7 +146,7 @@ async def pause_workflow(workflow_id: UUID, session: DbSession) -> WorkflowRespo
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     except InvalidTransitionError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
-    return WorkflowResponse.model_validate(wf)
+    return _to_response(wf)
 
 
 @router.post("/{workflow_id}/resume", response_model=WorkflowResponse)
@@ -133,4 +158,4 @@ async def resume_workflow(workflow_id: UUID, session: DbSession) -> WorkflowResp
     except InvalidTransitionError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
 
-    return WorkflowResponse.model_validate(wf)
+    return _to_response(wf)

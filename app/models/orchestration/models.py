@@ -48,7 +48,10 @@ class WorkflowModel(OrchestrationBase):
         DateTime(timezone=True), server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), onupdate=func.now()
+        DateTime(timezone=True),
+        default=func.now(),
+        onupdate=func.now(),
+        nullable=False
     )
 
     tasks: Mapped[List["TaskModel"]] = relationship(
@@ -128,6 +131,7 @@ class MessageModel(OrchestrationBase):
     idempotency_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    workflow: Mapped["WorkflowModel"] = relationship(back_populates="messages")
 
     # Unique constraint: No two messages in the same workflow can have the same idempotency key
     __table_args__ = (

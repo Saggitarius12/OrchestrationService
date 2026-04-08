@@ -27,7 +27,7 @@ class WorkflowResponse(WorkflowBase):
     result_data: Optional[dict[str, Any]] = None
     created_at: datetime
     updated_at: datetime
-    
+
     # We optionally include tasks if they were loaded in the repository
     tasks: Optional[List[Any]] = Field(default=None, description="List of TaskResponses")
 
